@@ -105,6 +105,12 @@ results/race/<target>__<judge>__<round>/
 
 Set `OUT_ROOT` to write them elsewhere.
 
+`exp_prep.py` writes 15-task copies of each target into `data/raw_subset/` and
+`data/cleaned_subset/`, and every run points the benchmark at those. This matters for cost:
+the benchmark never passes `task_ids` to its cleaner, so given a full report file it cleans
+all 100 tasks — including 50 long English reports — instead of our 15 (about $4.64 versus
+$0.56 for the four DRAs).
+
 Citation cleaning happens automatically on the first scoring run for a target and is
 skipped on every run after that, so there is no separate cleaning step. (`./exp_run.sh
 clean` still exists if you would rather pay for it up front.) Do **not** pass

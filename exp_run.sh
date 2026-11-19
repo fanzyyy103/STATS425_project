@@ -26,6 +26,13 @@ export DRB_PATH="$DRB"
 OUT_ROOT="${OUT_ROOT:-$SCRIPT_DIR/results}"
 mkdir -p "$OUT_ROOT"
 
+# 只含 15 题的 target 文件（exp_prep.py 生成）。必须用它们：benchmark 清洗时
+# 不按题目过滤，喂整份文件会把全部 100 题都清洗一遍（约 $4.6 vs $0.6）
+SUB_RAW="$SCRIPT_DIR/data/raw_subset"
+SUB_CLEAN="$SCRIPT_DIR/data/cleaned_subset"
+DATA_ARGS=(--raw_data_dir "$SUB_RAW" --cleaned_data_dir "$SUB_CLEAN")
+has_target() { [[ -f "$SUB_RAW/$1.jsonl" || -f "$SUB_CLEAN/$1.jsonl" ]]; }
+
 cd "$DRB"
 
 MODE="${1:-score}"
@@ -76,8 +83,8 @@ run() {
 # ── 冒烟测试：1 道题跑通两个 judge，验证整条流水线 ──────────────
 if [[ "$MODE" == "smoke" ]]; then
   T="${2:-claude-3-7-sonnet-latest}"
-  if [[ ! -f "data/test_data/cleaned_data/${T}.jsonl" ]]; then
-    echo "$T 还没有清洗版。先跑 ./exp_run.sh clean，或改用 claude-3-7-sonnet-latest（仓库自带）"
+  if ! has_target "$T"; then
+    echo "子集里没有 ${T}。先运行 python exp_prep.py（缺文件的话它会告诉你怎么下载）"
     exit 1
   fi
   echo "冒烟测试：target=${T}，1 道题，2 个 judge，写入正式目录（之后跑全量会自动跳过这题）"
@@ -90,7 +97,7 @@ if [[ "$MODE" == "smoke" ]]; then
     echo ""
     echo "=== judge=$JNAME ==="
     run python deepresearch_bench_race.py "$T" \
-      --only_zh --limit 1 \
+      --only_zh --limit 1 "${DATA_ARGS[@]}" \
       --query_file "$QUERY" --max_workers 1 --output_dir "$OUT"
   done
 
@@ -134,15 +141,15 @@ if [[ "$MODE" == "clean" ]]; then
   setup_env openai
   export CLEAN_MODEL="${CLEAN_MODEL:-gpt-5.6-luna}"
   for T in "${TARGETS[@]}"; do
-    if [[ -f "data/test_data/cleaned_data/${T}.jsonl" ]]; then
+    if [[ -f "$SUB_CLEAN/${T}.jsonl" ]]; then
       echo "跳过 ${T}（已有清洗版）"; continue
     fi
-    if [[ ! -f "data/test_data/raw_data/${T}.jsonl" ]]; then
+    if [[ ! -f "$SUB_RAW/${T}.jsonl" ]]; then
       echo "跳过 ${T}（原始文件缺失，需先从 Hugging Face 下载）"; continue
     fi
     echo "=== 清洗 $T ==="
     run python deepresearch_bench_race.py "$T" \
-      --only_zh --query_file "$QUERY" \
+      --only_zh "${DATA_ARGS[@]}" --query_file "$QUERY" \
       --max_workers 8 --output_dir "$OUT_ROOT/_cleanpass/${T}"
   done
   echo "清洗完成。接下来：./exp_run.sh score"
@@ -162,7 +169,7 @@ for J in "${JUDGES[@]}"; do
 
   for R in "${ROUNDS[@]}"; do
     for T in "${TARGETS[@]}"; do
-      if [[ ! -f "data/test_data/cleaned_data/${T}.jsonl" ]]; then
+      if ! has_target "$T"; then
         echo "跳过 ${T}（没有清洗版，先跑 ./exp_run.sh clean）"; continue
       fi
       OUT="$OUT_ROOT/race/${T}__${JNAME}__${R}"
@@ -171,7 +178,7 @@ for J in "${JUDGES[@]}"; do
       echo ""
       echo "=== judge=$JNAME  轮次=$R  target=$T ==="
       run python deepresearch_bench_race.py "$T" \
-        --only_zh \
+        --only_zh "${DATA_ARGS[@]}" \
         --query_file "$QUERY" \
         --max_workers "$JWORKERS" \
         --output_dir "$OUT"

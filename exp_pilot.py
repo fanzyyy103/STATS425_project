@@ -39,6 +39,18 @@ JUDGES = [
     #      role="Google 侧（免费层）"),
 ]
 
+SUB_CLEAN = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data/cleaned_subset")
+
+
+def find_cleaned(target):
+    """先找本项目的子集，再退回 benchmark 自带的清洗版。"""
+    for p in (os.path.join(SUB_CLEAN, f"{target}.jsonl"),
+              os.path.join(REPO, f"data/test_data/cleaned_data/{target}.jsonl")):
+        if os.path.exists(p):
+            return p
+    return None
+
+
 TARGETS = ["gemini-2.5-pro-deepresearch", "openai-deepresearch",
            "perplexity-Research", "grok-deeper-search",
            "claude-3-7-sonnet-latest"]
@@ -160,9 +172,10 @@ def main():
     criteria = {r["prompt"]: r for r in load_jsonl(os.path.join(REPO, "data/criteria_data/criteria.jsonl"))}[task["prompt"]]
     n_criteria = sum(len(v) for v in criteria["criterions"].values())
     refs = {r["id"]: r["article"] for r in load_jsonl(os.path.join(REPO, "data/test_data/cleaned_data/reference.jsonl"))}
-    tgt_path = os.path.join(REPO, f"data/test_data/cleaned_data/{args.target}.jsonl")
-    if not os.path.exists(tgt_path):
-        sys.exit(f"找不到 {tgt_path}（先下载并清洗该 target）")
+    tgt_path = find_cleaned(args.target)
+    if not tgt_path:
+        sys.exit(f"找不到 {args.target} 的清洗版。\n"
+                 f"先 python exp_prep.py，再用 ./exp_run.sh smoke {args.target} 跑一次让它自动清洗")
     tgts = {r["id"]: r["article"] for r in load_jsonl(tgt_path)}
 
     user_prompt = ZH_PROMPT.format(
@@ -222,8 +235,8 @@ def main():
 
     tgt_tokens = {}
     for t in TARGETS:
-        p = os.path.join(REPO, f"data/test_data/cleaned_data/{t}.jsonl")
-        if os.path.exists(p):
+        p = find_cleaned(t)
+        if p:
             d = {r["id"]: r["article"] for r in load_jsonl(p)}
             tgt_tokens[t] = sum(est_tokens(d[i]) for i in tasks if i in d)
     missing = [t for t in TARGETS if t not in tgt_tokens]
