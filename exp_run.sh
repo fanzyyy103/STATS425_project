@@ -2,7 +2,7 @@
 # 批量运行：3 个 judge × 2 轮 × 5 个 target × 15 题
 #
 #   ./exp_run.sh smoke     冒烟测试：1 道题 × 2 个 judge，跑完打印结果文件
-#   ./exp_run.sh clean     先清洗 4 个 DRA（只做一次，之后所有 judge 复用）
+#   ./exp_run.sh clean     预先清洗（可选；不跑的话首次打分时会自动清洗）
 #   ./exp_run.sh score     正式打分
 #   ./exp_run.sh score gpt-5-nano    只跑指定 judge
 #   DRY=1 ./exp_run.sh score         只打印命令不执行
@@ -90,7 +90,7 @@ if [[ "$MODE" == "smoke" ]]; then
     echo ""
     echo "=== judge=$JNAME ==="
     run python deepresearch_bench_race.py "$T" \
-      --skip_cleaning --only_zh --limit 1 \
+      --only_zh --limit 1 \
       --query_file "$QUERY" --max_workers 1 --output_dir "$OUT"
   done
 
@@ -146,6 +146,7 @@ if [[ "$MODE" == "clean" ]]; then
       --max_workers 8 --output_dir "$OUT_ROOT/_cleanpass/${T}"
   done
   echo "清洗完成。接下来：./exp_run.sh score"
+  echo "（这一步是可选的——不预清洗的话，首次打分时会自动完成）"
   exit 0
 fi
 
@@ -170,7 +171,7 @@ for J in "${JUDGES[@]}"; do
       echo ""
       echo "=== judge=$JNAME  轮次=$R  target=$T ==="
       run python deepresearch_bench_race.py "$T" \
-        --skip_cleaning --only_zh \
+        --only_zh \
         --query_file "$QUERY" \
         --max_workers "$JWORKERS" \
         --output_dir "$OUT"
