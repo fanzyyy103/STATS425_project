@@ -1,13 +1,19 @@
-# 实验结果（体积大，且含各轮原始输出）
-results/
-*.jsonl
+# judge 原文：约 9MB，体积大，不入库（需要时本地重跑或单独归档）
+results/**/judge_outputs.jsonl
+# 清洗阶段的临时输出
+results/_cleanpass/
 
-# 但保留选题清单
-!tasks_15.json
+# 实验分数是要交付的数据，保留在库里：
+#   results/race/<target>__<judge>__<round>/raw_results.jsonl
+#   results/race/<target>__<judge>__<round>/race_result.txt
+
+# benchmark 的数据不属于本仓库
+data/
 
 # 密钥
 .env
 *.key
+*.pem
 
 __pycache__/
 *.pyc

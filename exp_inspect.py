@@ -15,7 +15,10 @@
 import argparse, glob, json, os, re, sys
 
 REPO = os.environ.get("DRB_PATH") or os.path.dirname(os.path.abspath(__file__))
-RESULTS = os.path.join(REPO, os.environ.get("EXP_RESULTS_DIR", "results/race"))
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+# 结果默认写在本项目的 results/ 下（见 exp_run.sh 的 OUT_ROOT）
+OUT_ROOT = os.environ.get("OUT_ROOT") or os.path.join(SCRIPT_DIR, "results")
+RESULTS = os.path.join(OUT_ROOT, "race")
 DIMS = ["comprehensiveness", "insight", "instruction_following", "readability"]
 
 

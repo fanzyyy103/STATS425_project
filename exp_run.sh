@@ -20,6 +20,11 @@ DRB="${DRB_PATH:-$SCRIPT_DIR}"
   exit 1
 }
 export DRB_PATH="$DRB"
+
+# 结果写进本项目（脚本所在目录），而不是 benchmark 克隆，便于版本管理与交付
+OUT_ROOT="${OUT_ROOT:-$SCRIPT_DIR/results}"
+mkdir -p "$OUT_ROOT"
+
 cd "$DRB"
 
 MODE="${1:-score}"
@@ -81,7 +86,7 @@ if [[ "$MODE" == "clean" ]]; then
     echo "=== 清洗 $T ==="
     run python deepresearch_bench_race.py "$T" \
       --only_zh --query_file "$QUERY" \
-      --max_workers 8 --output_dir "results/_cleanpass/${T}"
+      --max_workers 8 --output_dir "$OUT_ROOT/_cleanpass/${T}"
   done
   echo "清洗完成。接下来：./exp_run.sh score"
   exit 0
@@ -102,9 +107,9 @@ for J in "${JUDGES[@]}"; do
       if [[ ! -f "data/test_data/cleaned_data/${T}.jsonl" ]]; then
         echo "跳过 $T（没有清洗版，先跑 ./exp_run.sh clean）"; continue
       fi
-      OUT="results/race/${T}__${JNAME}__${R}"
+      OUT="$OUT_ROOT/race/${T}__${JNAME}__${R}"
       # judge 原文写到同一目录（需先跑 exp_patch_raw.py，否则此变量被忽略）
-      export JUDGE_DUMP_DIR="$DRB/$OUT"
+      export JUDGE_DUMP_DIR="$OUT"
       echo ""
       echo "=== judge=$JNAME  轮次=$R  target=$T ==="
       run python deepresearch_bench_race.py "$T" \
@@ -119,5 +124,5 @@ done
 
 echo ""
 echo "完成 $NDONE 个运行，用时 $(( ($(date +%s)-START)/60 )) 分钟"
-echo "结果在 results/race/<target>__<judge>__<round>/raw_results.jsonl"
+echo "结果在 $OUT_ROOT/race/<target>__<judge>__<round>/raw_results.jsonl"
 echo "下一步：python exp_analyze.py"
