@@ -94,6 +94,17 @@ python exp_analyze.py    # three-layer analysis
 python exp_inspect.py --stats   # compare how the judges actually reason
 ```
 
+Results are written into this repository, not into the benchmark clone:
+
+```
+results/race/<target>__<judge>__<round>/
+  ├── raw_results.jsonl   per-task scores      (committed)
+  ├── race_result.txt     aggregated summary   (committed)
+  └── judge_outputs.jsonl raw judge text       (gitignored, ~9 MB total)
+```
+
+Set `OUT_ROOT` to write them elsewhere.
+
 `exp_patch_raw.py` must run **before** scoring. The benchmark keeps only the final
 numbers, so without it the judges' written comparisons are discarded and cannot be
 recovered. Saving them costs nothing — the text is already generated and paid for — and
