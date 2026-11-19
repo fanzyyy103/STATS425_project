@@ -89,7 +89,6 @@ python exp_prep.py       # select the 15 tasks, report what data is missing
 python exp_pilot.py      # one call per judge: measure real usage, validate JSON
 python exp_patch_raw.py  # keep the judges' raw responses (do this before scoring)
 ./exp_run.sh smoke       # one task through both judges, prints the result files
-./exp_run.sh clean       # strip citations (once; reused by every judge)
 ./exp_run.sh score       # 2 judges x 2 rounds x 5 targets
 python exp_analyze.py    # three-layer analysis
 python exp_inspect.py --stats   # compare how the judges actually reason
@@ -105,6 +104,19 @@ results/race/<target>__<judge>__<round>/
 ```
 
 Set `OUT_ROOT` to write them elsewhere.
+
+`exp_prep.py` writes 15-task copies of each target into `data/raw_subset/` and
+`data/cleaned_subset/`, and every run points the benchmark at those. This matters for cost:
+the benchmark never passes `task_ids` to its cleaner, so given a full report file it cleans
+all 100 tasks — including 50 long English reports — instead of our 15 (about $4.64 versus
+$0.56 for the four DRAs).
+
+Citation cleaning happens automatically on the first scoring run for a target and is
+skipped on every run after that, so there is no separate cleaning step. (`./exp_run.sh
+clean` still exists if you would rather pay for it up front.) Do **not** pass
+`--skip_cleaning` to the benchmark: upstream wraps the whole scoring branch in
+`if not skip_cleaning`, so the flag skips the evaluation itself, not just the cleaning,
+and the run finishes with "Total tasks processed: 0".
 
 `exp_patch_raw.py` must run **before** scoring. The benchmark keeps only the final
 numbers, so without it the judges' written comparisons are discarded and cannot be

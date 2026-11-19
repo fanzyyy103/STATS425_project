@@ -21,6 +21,13 @@ RAW_DIR    = os.path.join(REPO, "data/test_data/raw_data")
 CLEAN_DIR  = os.path.join(REPO, "data/test_data/cleaned_data")
 OUT        = os.path.join(REPO, "data/prompt_data/query_sub15.jsonl")
 
+# 只含 15 题的 target 文件，放在本项目里。benchmark 清洗时不会按题目过滤
+# （主脚本没把 task_ids 传给 clean_articles），喂它整份文件就会清洗全部 100 题，
+# 包括 50 道英文长报告，成本约为只清洗 15 题的 8 倍。
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+SUB_RAW    = os.path.join(SCRIPT_DIR, "data/raw_subset")
+SUB_CLEAN  = os.path.join(SCRIPT_DIR, "data/cleaned_subset")
+
 # 按输入体量十五分位分层抽样得到，覆盖从最短到最长的全范围
 TASK_IDS = [4, 11, 45, 49, 20, 34, 27, 1, 17, 18, 22, 30, 16, 24, 6]
 
@@ -89,43 +96,57 @@ def main():
         print(f"{q['id']:<5}{q['topic'][:24]:<26}{n:>7}{len(refs[q['id']]):>14,}")
     print(f"{'':<31}{n_crit_total:>7}  <- 评分标准总条数")
 
-    # target 文件齐不齐
-    print("\ntarget 数据状态：")
+    # target 文件：抽出 15 题写到本项目的子集目录
+    print("\ntarget 数据（写入只含这 15 题的子集文件）：")
     ids = {q["id"] for q in picked}
-    need_clean = []
+    os.makedirs(SUB_RAW, exist_ok=True)
+    os.makedirs(SUB_CLEAN, exist_ok=True)
+
+    def write_subset(src, dst):
+        rows = [r for r in load_jsonl(src) if r.get("id") in ids]
+        with open(dst, "w", encoding="utf-8") as f:
+            for r in rows:
+                f.write(json.dumps(r, ensure_ascii=False) + "\n")
+        return len(rows)
+
+    missing, need_clean = [], []
     for t in TARGETS:
         raw = os.path.join(RAW_DIR, f"{t}.jsonl")
         cln = os.path.join(CLEAN_DIR, f"{t}.jsonl")
-        has_raw, has_cln = os.path.exists(raw), os.path.exists(cln)
-        if has_cln:
-            cov = len(ids & {r["id"] for r in load_jsonl(cln)})
-            note = f"已清洗，覆盖 {cov}/{len(ids)} 题" + ("" if cov == len(ids) else "  ← 缺题！")
-            mark = "OK  "
-        elif has_raw:
-            cov = len(ids & {r["id"] for r in load_jsonl(raw)})
-            note = f"只有原始版，覆盖 {cov}/{len(ids)} 题 —— 需要先清洗"
+        sub_raw = os.path.join(SUB_RAW, f"{t}.jsonl")
+        sub_cln = os.path.join(SUB_CLEAN, f"{t}.jsonl")
+
+        if not os.path.exists(raw) and not os.path.exists(cln):
+            print(f"  [缺失  ] {t:<32} 文件不存在 —— 需要从 Hugging Face 下载")
+            missing.append(t)
+            continue
+
+        n_raw = write_subset(raw, sub_raw) if os.path.exists(raw) else 0
+        if os.path.exists(cln):
+            # benchmark 已有清洗版：直接复制对应 15 题，首次打分时清洗会跳过它们
+            n_cln = write_subset(cln, sub_cln)
+            note = f"已清洗 {n_cln}/{len(ids)} 题（复制自 benchmark，不必重洗）"
+            mark = "OK    "
+        else:
+            note = f"原始版 {n_raw}/{len(ids)} 题 —— 首次打分时自动清洗"
             mark = "待清洗"
             need_clean.append(t)
-        else:
-            note = "文件不存在 —— 需要从 Hugging Face 下载"
-            mark = "缺失"
-        print(f"  [{mark:<5}] {t:<32} {note}")
+        if n_raw and n_raw < len(ids):
+            note += f"  ← 缺 {len(ids) - n_raw} 题！"
+        print(f"  [{mark}] {t:<32} {note}")
 
+    print(f"\n  子集目录：{SUB_RAW}")
+    print(f"            {SUB_CLEAN}")
     if need_clean:
-        print("\n需要先跑清洗（只做一次，之后所有 judge 复用）：")
-        for t in need_clean:
-            print(f"  python deepresearch_bench_race.py {t} --only_zh \\")
-            print(f"    --query_file data/prompt_data/query_sub15.jsonl \\")
-            print(f"    --output_dir results/_cleanpass/{t}")
-        print("  （这一步会顺带产生 cleaned_data/<model>.jsonl，之后就能用 --skip_cleaning）")
+        print(f"\n  {len(need_clean)} 个 target 会在首次打分时清洗，只清洗这 15 题。")
 
-    missing = [t for t in TARGETS
-               if not os.path.exists(os.path.join(RAW_DIR, f"{t}.jsonl"))
-               and not os.path.exists(os.path.join(CLEAN_DIR, f"{t}.jsonl"))]
     if missing:
-        print("\n从 Hugging Face 下载缺失的 target（muset-ai/DeepResearch-Bench-Dataset）：")
+        print("\n从 Hugging Face 下载缺失的 target，放到 benchmark 的 raw_data 目录：")
+        print(f"  cd {RAW_DIR}")
+        base = "https://huggingface.co/datasets/muset-ai/DeepResearch-Bench-Dataset/resolve/main/generated_reports"
         for t in missing:
-            print(f"  {t}.jsonl  ->  data/test_data/raw_data/{t}.jsonl")
+            print(f"  curl -L -O {base}/{t}.jsonl")
+        print("  下载后重新运行 python exp_prep.py")
 
     # 体量估算，供成本参考
     fixed = sum(est_tokens(refs[q["id"]]) for q in picked)
