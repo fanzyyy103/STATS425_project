@@ -5,8 +5,10 @@
 但"格式合法但内容敷衍"这种问题只能靠人读原文才能发现——尤其是低档 judge。
 跑完就补不回来了，所以必须在正式运行前打这个补丁。
 
-补丁只在设置了 JUDGE_DUMP_DIR 时生效，不影响原有行为和输出格式；
-原文写到该目录下的 judge_outputs.jsonl，与 raw_results.jsonl 并列。
+补丁只在设置了 JUDGE_DUMP_DIR 时生效，不影响原有行为和输出格式。它在该目录写两个文件：
+  judge_outputs.jsonl  judge 的原始回复
+  progress.jsonl       每题打完立刻落盘的分数（benchmark 只在整格跑完才写结果，
+                       中断就全丢；exp_resume.py 用这个文件实现按题续跑）
 
 用法：
     export DRB_PATH=~/Desktop/deep_research_bench
@@ -18,29 +20,36 @@ import argparse, os, shutil, sys
 REPO = os.environ.get("DRB_PATH") or os.path.dirname(os.path.abspath(__file__))
 TARGET = os.path.join(REPO, "deepresearch_bench_race.py")
 BACKUP = TARGET + ".orig"
-MARK = "# --- exp patch: dump judge raw output ---"
+MARK = "# --- exp patch v2 ---"
+MARK_V1 = "# --- exp patch: dump judge raw output ---"   # 旧版，检测到就升级
 
 ANCHOR = """    with lock:
         pbar.update(1)
 
     return final_result"""
 
-PATCHED = """    # --- exp patch: dump judge raw output ---
+PATCHED = """    # --- exp patch v2 ---
     _dump_dir = os.environ.get("JUDGE_DUMP_DIR")
-    if _dump_dir and llm_response_str:
+    if _dump_dir:
         try:
             os.makedirs(_dump_dir, exist_ok=True)
             with lock:
-                with open(os.path.join(_dump_dir, "judge_outputs.jsonl"),
+                if llm_response_str:
+                    with open(os.path.join(_dump_dir, "judge_outputs.jsonl"),
+                              "a", encoding="utf-8") as _f:
+                        _f.write(json.dumps({
+                            "id": task_id,
+                            "language": language,
+                            "judge": os.environ.get("RACE_MODEL", ""),
+                            "raw": llm_response_str,
+                        }, ensure_ascii=False) + "\\n")
+                # 逐题落盘。benchmark 只在整格跑完后才写 raw_results.jsonl，
+                # 中途中断则已付费的题全部丢失；exp_resume.py 会把它合并回去。
+                with open(os.path.join(_dump_dir, "progress.jsonl"),
                           "a", encoding="utf-8") as _f:
-                    _f.write(json.dumps({
-                        "id": task_id,
-                        "language": language,
-                        "judge": os.environ.get("RACE_MODEL", ""),
-                        "raw": llm_response_str,
-                    }, ensure_ascii=False) + "\\n")
+                    _f.write(json.dumps(final_result, ensure_ascii=False) + "\\n")
         except Exception as _e:
-            logger.warning(f"ID {task_id}: judge dump failed - {_e}")
+            logger.warning(f"ID {task_id}: exp patch write failed - {_e}")
     # --- end exp patch ---
 
     with lock:
@@ -67,8 +76,13 @@ def main():
 
     src = open(TARGET, encoding="utf-8").read()
     if MARK in src:
-        print("已经打过补丁了，无需重复执行。")
+        print("已经打过最新补丁了，无需重复执行。")
         return
+    if MARK_V1 in src:
+        if not os.path.exists(BACKUP):
+            sys.exit("检测到旧版补丁但找不到备份，无法升级。请重新克隆 benchmark 后再运行。")
+        print("检测到旧版补丁，先还原再升级到 v2（新增逐题落盘，支持中断续跑）")
+        src = open(BACKUP, encoding="utf-8").read()
     if ANCHOR not in src:
         sys.exit("找不到插入位置——上游代码可能变了。\n"
                  "请检查 process_single_item 末尾是否仍是 'return final_result'。")

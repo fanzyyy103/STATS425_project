@@ -1,5 +1,8 @@
 # judge 原文：约 9MB，体积大，不入库（需要时本地重跑或单独归档）
 results/**/judge_outputs.jsonl
+# 续跑用的中间文件：progress.jsonl 已合并进 raw_results.jsonl
+results/**/progress.jsonl
+results/**/_query_remaining.jsonl
 # 清洗阶段的临时输出
 results/_cleanpass/
 
