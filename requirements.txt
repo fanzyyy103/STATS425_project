@@ -1,0 +1,4 @@
+# exp_*.py 的依赖。deep_research_bench 本身的依赖另见其 requirements.txt
+numpy>=1.24
+requests>=2.31
+tqdm>=4.65
