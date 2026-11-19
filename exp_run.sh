@@ -7,7 +7,7 @@
 #   ./exp_run.sh score gpt-5-nano    只跑指定 judge
 #   DRY=1 ./exp_run.sh score         只打印命令不执行
 #
-# 不加 --force，所以中断后重跑会跳过已完成的题目，可以安全续跑。
+# 按题续跑：每格运行前用 exp_resume.py 算出剩余题目，只把这些交给 benchmark。
 
 set -uo pipefail
 
@@ -32,6 +32,14 @@ SUB_RAW="$SCRIPT_DIR/data/raw_subset"
 SUB_CLEAN="$SCRIPT_DIR/data/cleaned_subset"
 DATA_ARGS=(--raw_data_dir "$SUB_RAW" --cleaned_data_dir "$SUB_CLEAN")
 has_target() { [[ -f "$SUB_RAW/$1.jsonl" || -f "$SUB_CLEAN/$1.jsonl" ]]; }
+
+# 每格运行前：合并已有结果、去重，只把没做过的题交给 benchmark。
+# benchmark 自带的续跑是假的（会重做全部题并重复写入），见 exp_resume.py
+resume_cell() {   # $1 = 输出目录；设置 CELL_DONE / CELL_LEFT
+  local r
+  r=$(python "$SCRIPT_DIR/exp_resume.py" "$1" "$QUERY") || { echo "exp_resume.py 失败"; exit 1; }
+  read -r CELL_DONE CELL_LEFT <<< "$r"
+}
 
 cd "$DRB"
 
@@ -106,9 +114,13 @@ if [[ "$MODE" == "smoke" ]]; then
       export JUDGE_DUMP_DIR="$OUT"
       echo ""
       echo "=== target=${T}  judge=${JNAME} ==="
+      resume_cell "$OUT"
+      if [[ "$CELL_DONE" -ge 1 ]]; then
+        echo "已有 ${CELL_DONE} 题结果，跳过"; continue
+      fi
       run python deepresearch_bench_race.py "$T" \
         --only_zh --limit 1 "${DATA_ARGS[@]}" \
-        --query_file "$QUERY" --max_workers 1 --output_dir "$OUT"
+        --query_file "$OUT/_query_remaining.jsonl" --max_workers 1 --output_dir "$OUT"
     done
   done
 
@@ -193,11 +205,17 @@ for J in "${JUDGES[@]}"; do
       export JUDGE_DUMP_DIR="$OUT"
       echo ""
       echo "=== judge=$JNAME  轮次=$R  target=$T ==="
+      resume_cell "$OUT"
+      if [[ "$CELL_LEFT" -eq 0 ]]; then
+        echo "15 题已全部完成，跳过"; continue
+      fi
+      [[ "$CELL_DONE" -gt 0 ]] && echo "已完成 ${CELL_DONE} 题，只跑剩下的 ${CELL_LEFT} 题"
       run python deepresearch_bench_race.py "$T" \
         --only_zh "${DATA_ARGS[@]}" \
-        --query_file "$QUERY" \
+        --query_file "$OUT/_query_remaining.jsonl" \
         --max_workers "$JWORKERS" \
         --output_dir "$OUT"
+      resume_cell "$OUT"   # 跑完再合并一次，补写 race_result.txt
       NDONE=$((NDONE+1))
     done
   done

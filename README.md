@@ -118,6 +118,25 @@ clean` still exists if you would rather pay for it up front.) Do **not** pass
 `if not skip_cleaning`, so the flag skips the evaluation itself, not just the cleaning,
 and the run finishes with "Total tasks processed: 0".
 
+**Resuming is per task, not per cell.** The benchmark's own resume is misleading: it
+reads the finished ids and logs "Will skip N already processed task IDs", but never passes
+them to `process_language_data()`, which re-scores every task in the query file and appends
+the results to the old ones. A cell that already holds one task (say, from a smoke test)
+ends up re-billed for it and with that task written twice, so its averages are wrong. It
+also writes `raw_results.jsonl` only once the whole cell finishes, so an interrupted cell
+loses every task it had already paid for.
+
+`exp_resume.py` runs before each cell: it merges `raw_results.jsonl` with the per-task
+`progress.jsonl` that the patch writes, drops duplicates and errored tasks, and hands the
+benchmark a query file containing only the tasks still missing. Checked against the real
+benchmark code with a mock judge:
+
+| Scenario | Billed calls | Rows | Duplicates |
+|---|---|---|---|
+| Upstream: smoke, then full run | 16 | 16 | task 4 twice |
+| With `exp_resume.py`: smoke, then full run | 15 | 15 | none |
+| With `exp_resume.py`: killed at task 5, then rerun | 15 | 15 | none |
+
 `exp_patch_raw.py` must run **before** scoring. The benchmark keeps only the final
 numbers, so without it the judges' written comparisons are discarded and cannot be
 recovered. Saving them costs nothing — the text is already generated and paid for — and
@@ -179,4 +198,5 @@ for the same criterion side by side, and `--stats` reports comment length per ju
 | `exp_run.sh` | Batch runner (`clean` / `score`), resumable |
 | `exp_analyze.py` | Three-layer analysis with bootstrap CIs |
 | `exp_patch_raw.py` | Patch the benchmark to persist raw judge responses (idempotent, reversible with `--revert`) |
+| `exp_resume.py` | Per-task resume: merge partial results, dedupe, write the query file of remaining tasks |
 | `exp_inspect.py` | Put two judges' written comparisons side by side; `--stats` summarises comment length |
