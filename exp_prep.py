@@ -102,8 +102,13 @@ def main():
     os.makedirs(SUB_RAW, exist_ok=True)
     os.makedirs(SUB_CLEAN, exist_ok=True)
 
+    order = {tid: i for i, tid in enumerate(TASK_IDS)}
+
     def write_subset(src, dst):
-        rows = [r for r in load_jsonl(src) if r.get("id") in ids]
+        # 必须与 query_sub15.jsonl 同序：--limit N 时，打分取 query 文件的前 N 题，
+        # 清洗取原始文件的前 N 题。顺序不一致就会清洗 A 题、打分去找 B 题。
+        rows = sorted((r for r in load_jsonl(src) if r.get("id") in ids),
+                      key=lambda r: order[r["id"]])
         with open(dst, "w", encoding="utf-8") as f:
             for r in rows:
                 f.write(json.dumps(r, ensure_ascii=False) + "\n")
