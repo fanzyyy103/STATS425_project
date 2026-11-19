@@ -88,7 +88,7 @@ into `$DRB_PATH/data/test_data/raw_data/`. Claude-3.7-Sonnet ships with the benc
 python exp_prep.py       # select the 15 tasks, report what data is missing
 python exp_pilot.py      # one call per judge: measure real usage, validate JSON
 python exp_patch_raw.py  # keep the judges' raw responses (do this before scoring)
-./exp_run.sh smoke       # one task through both judges, prints the result files
+./exp_run.sh smoke all   # one task per target through both judges, prints a pass/fail table
 ./exp_run.sh score       # 2 judges x 2 rounds x 5 targets
 python exp_analyze.py    # three-layer analysis
 python exp_inspect.py --stats   # compare how the judges actually reason

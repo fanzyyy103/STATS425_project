@@ -80,59 +80,75 @@ run() {
   [[ "$DRY" == "1" ]] || "$@"
 }
 
-# ── 冒烟测试：1 道题跑通两个 judge，验证整条流水线 ──────────────
+# ── 冒烟测试：每个 target 1 道题 × 2 个 judge，验证整条流水线 ─────
+#   ./exp_run.sh smoke                     只测 Claude（已清洗，只验打分）
+#   ./exp_run.sh smoke all                 全部 5 个 target（也验证清洗路径）
+#   ./exp_run.sh smoke grok-deeper-search  指定一个
 if [[ "$MODE" == "smoke" ]]; then
-  T="${2:-claude-3-7-sonnet-latest}"
-  if ! has_target "$T"; then
-    echo "子集里没有 ${T}。先运行 python exp_prep.py（缺文件的话它会告诉你怎么下载）"
-    exit 1
-  fi
-  echo "冒烟测试：target=${T}，1 道题，2 个 judge，写入正式目录（之后跑全量会自动跳过这题）"
-  for J in "${JUDGES[@]}"; do
-    IFS='|' read -r JNAME JMODEL JBACKEND JWORKERS <<< "$J"
-    setup_env "$JBACKEND"
-    export RACE_MODEL="$JMODEL"
-    OUT="$OUT_ROOT/race/${T}__${JNAME}__r1"
-    export JUDGE_DUMP_DIR="$OUT"
-    echo ""
-    echo "=== judge=$JNAME ==="
-    run python deepresearch_bench_race.py "$T" \
-      --only_zh --limit 1 "${DATA_ARGS[@]}" \
-      --query_file "$QUERY" --max_workers 1 --output_dir "$OUT"
+  ARG="${2:-claude-3-7-sonnet-latest}"
+  if [[ "$ARG" == "all" ]]; then SMOKE_TARGETS=("${TARGETS[@]}"); else SMOKE_TARGETS=("$ARG"); fi
+
+  RUN_T=()
+  for T in "${SMOKE_TARGETS[@]}"; do
+    if has_target "$T"; then RUN_T+=("$T")
+    else echo "跳过 ${T}：子集里没有（先下载并重跑 python exp_prep.py）"; fi
+  done
+  [[ ${#RUN_T[@]} -gt 0 ]] || { echo "没有可测的 target"; exit 1; }
+
+  echo "冒烟测试：${#RUN_T[@]} 个 target × 1 道题 × 2 个 judge"
+  echo "写入正式目录，之后跑全量会自动跳过这些题，不浪费。"
+  for T in "${RUN_T[@]}"; do
+    for J in "${JUDGES[@]}"; do
+      IFS='|' read -r JNAME JMODEL JBACKEND JWORKERS <<< "$J"
+      setup_env "$JBACKEND"
+      export RACE_MODEL="$JMODEL"
+      OUT="$OUT_ROOT/race/${T}__${JNAME}__r1"
+      export JUDGE_DUMP_DIR="$OUT"
+      echo ""
+      echo "=== target=${T}  judge=${JNAME} ==="
+      run python deepresearch_bench_race.py "$T" \
+        --only_zh --limit 1 "${DATA_ARGS[@]}" \
+        --query_file "$QUERY" --max_workers 1 --output_dir "$OUT"
+    done
   done
 
+  [[ "$DRY" == "1" ]] && exit 0
   echo ""
-  echo "════════ 结果文件 ════════"
-  for J in "${JUDGES[@]}"; do
-    IFS='|' read -r JNAME _ _ _ <<< "$J"
-    OUT="$OUT_ROOT/race/${T}__${JNAME}__r1"
-    echo ""
-    echo "── $JNAME  ($OUT)"
-    if [[ -f "$OUT/raw_results.jsonl" ]]; then
-      echo "   raw_results.jsonl   $(wc -l < "$OUT/raw_results.jsonl") 条"
-      python - "$OUT/raw_results.jsonl" <<'PYEOF'
-import json,sys
-for line in open(sys.argv[1]):
-    r=json.loads(line)
-    if "error" in r:
-        print(f"   ⚠ 任务 {r.get('id')} 失败：{r['error'][:80]}")
-    else:
-        print(f"   任务 {r['id']}: overall={r['overall_score']:.4f} "
-              f"compre={r['comprehensiveness']:.4f} insight={r['insight']:.4f} "
-              f"instr={r['instruction_following']:.4f} read={r['readability']:.4f}")
+  echo "════════════════════ 冒烟测试结果 ════════════════════"
+  python - "$OUT_ROOT/race" "$SUB_CLEAN" "${RUN_T[@]}" <<'PYEOF'
+import json, os, sys
+race, sub_clean, targets = sys.argv[1], sys.argv[2], sys.argv[3:]
+judges = ["gpt-5-mini", "gpt-5-nano"]
+ok_all = True
+print(f"\n{'target':<30}{'清洗':<8}" + "".join(f"{j:>14}" for j in judges) + "   原文")
+for t in targets:
+    cf = os.path.join(sub_clean, f"{t}.jsonl")
+    n_clean = sum(1 for _ in open(cf)) if os.path.exists(cf) else 0
+    row, dumps = f"{t:<30}{(str(n_clean)+' 题'):<8}", []
+    for j in judges:
+        d = os.path.join(race, f"{t}__{j}__r1")
+        rr, jo = os.path.join(d, "raw_results.jsonl"), os.path.join(d, "judge_outputs.jsonl")
+        cell = "无结果"
+        if os.path.exists(rr):
+            recs = [json.loads(l) for l in open(rr) if l.strip()]
+            good = [r for r in recs if "error" not in r]
+            if good:
+                cell = f"{good[0]['overall_score']:.4f}"
+            elif recs:
+                cell = "error"
+        if cell in ("无结果", "error"):
+            ok_all = False
+        row += f"{cell:>14}"
+        dumps.append("✓" if os.path.exists(jo) else "✗")
+    if "✗" in dumps:
+        ok_all = False
+    print(row + "   " + " ".join(dumps))
+print("\n清洗列：子集里已清洗的题数（DRA 首次应为 1，Claude 为 15）")
+print("原文列：judge_outputs.jsonl 是否生成（✗ = 没跑 exp_patch_raw.py）")
+print("参考：GPT-5.5 官方 judge 在任务 4 上给 Claude 的 overall 是 0.4690")
+print("\n" + ("✅ 全部通过，可以跑全量：./exp_run.sh score" if ok_all
+              else "⚠ 有格子失败，先别跑全量，把上面的输出发出来排查"))
 PYEOF
-    else
-      echo "   ⚠ 没有生成 raw_results.jsonl"
-    fi
-    if [[ -f "$OUT/judge_outputs.jsonl" ]]; then
-      echo "   judge_outputs.jsonl $(wc -l < "$OUT/judge_outputs.jsonl") 条，$(du -h "$OUT/judge_outputs.jsonl" | cut -f1)"
-    else
-      echo "   judge_outputs.jsonl 没有 —— 是否忘了跑 python exp_patch_raw.py ?"
-    fi
-  done
-  echo ""
-  echo "参考：GPT-5.5（官方 judge）在同一题上给 claude 的 overall 是 0.4690"
-  echo "两个 judge 都有分数且无 error，就可以跑全量了。"
   exit 0
 fi
 
