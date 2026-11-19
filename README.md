@@ -85,12 +85,19 @@ into `$DRB_PATH/data/test_data/raw_data/`. Claude-3.7-Sonnet ships with the benc
 ## Running
 
 ```bash
-python exp_prep.py      # select the 15 tasks, report what data is missing
-python exp_pilot.py     # one call per judge: measure real usage, validate JSON
-./exp_run.sh clean      # strip citations (once; reused by every judge)
-./exp_run.sh score      # 2 judges x 2 rounds x 5 targets
-python exp_analyze.py   # three-layer analysis
+python exp_prep.py       # select the 15 tasks, report what data is missing
+python exp_pilot.py      # one call per judge: measure real usage, validate JSON
+python exp_patch_raw.py  # keep the judges' raw responses (do this before scoring)
+./exp_run.sh clean       # strip citations (once; reused by every judge)
+./exp_run.sh score       # 2 judges x 2 rounds x 5 targets
+python exp_analyze.py    # three-layer analysis
+python exp_inspect.py --stats   # compare how the judges actually reason
 ```
+
+`exp_patch_raw.py` must run **before** scoring. The benchmark keeps only the final
+numbers, so without it the judges' written comparisons are discarded and cannot be
+recovered. Saving them costs nothing — the text is already generated and paid for — and
+adds roughly 9 MB over the full run.
 
 Run `exp_pilot.py` before committing to the full run. It reports measured token usage,
 checks that the cheap judge produces parseable JSON with the expected number of criteria,
@@ -124,6 +131,11 @@ reference reports are far longer (68.7k vs 20.6k characters at the median).
 With a cross-vendor judge enabled, a fourth section measures each judge's deviation from the
 cross-judge mean, split by whether judge and target share a model family.
 
+Scores alone do not show whether a judge is reasoning or going through the motions. A cheap
+judge can emit perfectly valid JSON while writing "both reports cover this adequately" for
+every criterion. `exp_inspect.py` surfaces that: it prints each judge's written comparison
+for the same criterion side by side, and `--stats` reports comment length per judge.
+
 ## Limitations
 
 - 15 tasks, Chinese only. A small model may be weaker in Chinese than in English, so part of
@@ -142,3 +154,5 @@ cross-judge mean, split by whether judge and target share a model family.
 | `exp_pilot.py` | One call per judge: real token usage, JSON validation, cost projection |
 | `exp_run.sh` | Batch runner (`clean` / `score`), resumable |
 | `exp_analyze.py` | Three-layer analysis with bootstrap CIs |
+| `exp_patch_raw.py` | Patch the benchmark to persist raw judge responses (idempotent, reversible with `--revert`) |
+| `exp_inspect.py` | Put two judges' written comparisons side by side; `--stats` summarises comment length |
