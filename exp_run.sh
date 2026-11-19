@@ -53,7 +53,7 @@ JUDGES=(
 )
 ROUNDS=(r1 r2)
 
-[[ -f "$QUERY" ]] || { echo "找不到 $QUERY，先跑 python exp_prep.py"; exit 1; }
+[[ -f "$QUERY" ]] || { echo "找不到 ${QUERY}，先跑 python exp_prep.py"; exit 1; }
 
 setup_env() {   # $1 = 后端
   if [[ "$1" == "gemini" ]]; then
@@ -80,7 +80,7 @@ if [[ "$MODE" == "smoke" ]]; then
     echo "$T 还没有清洗版。先跑 ./exp_run.sh clean，或改用 claude-3-7-sonnet-latest（仓库自带）"
     exit 1
   fi
-  echo "冒烟测试：target=$T，1 道题，2 个 judge，写入正式目录（之后跑全量会自动跳过这题）"
+  echo "冒烟测试：target=${T}，1 道题，2 个 judge，写入正式目录（之后跑全量会自动跳过这题）"
   for J in "${JUDGES[@]}"; do
     IFS='|' read -r JNAME JMODEL JBACKEND JWORKERS <<< "$J"
     setup_env "$JBACKEND"
@@ -135,10 +135,10 @@ if [[ "$MODE" == "clean" ]]; then
   export CLEAN_MODEL="${CLEAN_MODEL:-gpt-5.6-luna}"
   for T in "${TARGETS[@]}"; do
     if [[ -f "data/test_data/cleaned_data/${T}.jsonl" ]]; then
-      echo "跳过 $T（已有清洗版）"; continue
+      echo "跳过 ${T}（已有清洗版）"; continue
     fi
     if [[ ! -f "data/test_data/raw_data/${T}.jsonl" ]]; then
-      echo "跳过 $T（原始文件缺失，需先从 Hugging Face 下载）"; continue
+      echo "跳过 ${T}（原始文件缺失，需先从 Hugging Face 下载）"; continue
     fi
     echo "=== 清洗 $T ==="
     run python deepresearch_bench_race.py "$T" \
@@ -162,7 +162,7 @@ for J in "${JUDGES[@]}"; do
   for R in "${ROUNDS[@]}"; do
     for T in "${TARGETS[@]}"; do
       if [[ ! -f "data/test_data/cleaned_data/${T}.jsonl" ]]; then
-        echo "跳过 $T（没有清洗版，先跑 ./exp_run.sh clean）"; continue
+        echo "跳过 ${T}（没有清洗版，先跑 ./exp_run.sh clean）"; continue
       fi
       OUT="$OUT_ROOT/race/${T}__${JNAME}__${R}"
       # judge 原文写到同一目录（需先跑 exp_patch_raw.py，否则此变量被忽略）
