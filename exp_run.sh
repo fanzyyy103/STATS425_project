@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # 批量运行：3 个 judge × 2 轮 × 5 个 target × 15 题
 #
+#   ./exp_run.sh smoke     冒烟测试：1 道题 × 2 个 judge，跑完打印结果文件
 #   ./exp_run.sh clean     先清洗 4 个 DRA（只做一次，之后所有 judge 复用）
 #   ./exp_run.sh score     正式打分
 #   ./exp_run.sh score gpt-5-nano    只跑指定 judge
@@ -71,6 +72,62 @@ run() {
   echo "+ $*"
   [[ "$DRY" == "1" ]] || "$@"
 }
+
+# ── 冒烟测试：1 道题跑通两个 judge，验证整条流水线 ──────────────
+if [[ "$MODE" == "smoke" ]]; then
+  T="${2:-claude-3-7-sonnet-latest}"
+  if [[ ! -f "data/test_data/cleaned_data/${T}.jsonl" ]]; then
+    echo "$T 还没有清洗版。先跑 ./exp_run.sh clean，或改用 claude-3-7-sonnet-latest（仓库自带）"
+    exit 1
+  fi
+  echo "冒烟测试：target=$T，1 道题，2 个 judge，写入正式目录（之后跑全量会自动跳过这题）"
+  for J in "${JUDGES[@]}"; do
+    IFS='|' read -r JNAME JMODEL JBACKEND JWORKERS <<< "$J"
+    setup_env "$JBACKEND"
+    export RACE_MODEL="$JMODEL"
+    OUT="$OUT_ROOT/race/${T}__${JNAME}__r1"
+    export JUDGE_DUMP_DIR="$OUT"
+    echo ""
+    echo "=== judge=$JNAME ==="
+    run python deepresearch_bench_race.py "$T" \
+      --skip_cleaning --only_zh --limit 1 \
+      --query_file "$QUERY" --max_workers 1 --output_dir "$OUT"
+  done
+
+  echo ""
+  echo "════════ 结果文件 ════════"
+  for J in "${JUDGES[@]}"; do
+    IFS='|' read -r JNAME _ _ _ <<< "$J"
+    OUT="$OUT_ROOT/race/${T}__${JNAME}__r1"
+    echo ""
+    echo "── $JNAME  ($OUT)"
+    if [[ -f "$OUT/raw_results.jsonl" ]]; then
+      echo "   raw_results.jsonl   $(wc -l < "$OUT/raw_results.jsonl") 条"
+      python - "$OUT/raw_results.jsonl" <<'PYEOF'
+import json,sys
+for line in open(sys.argv[1]):
+    r=json.loads(line)
+    if "error" in r:
+        print(f"   ⚠ 任务 {r.get('id')} 失败：{r['error'][:80]}")
+    else:
+        print(f"   任务 {r['id']}: overall={r['overall_score']:.4f} "
+              f"compre={r['comprehensiveness']:.4f} insight={r['insight']:.4f} "
+              f"instr={r['instruction_following']:.4f} read={r['readability']:.4f}")
+PYEOF
+    else
+      echo "   ⚠ 没有生成 raw_results.jsonl"
+    fi
+    if [[ -f "$OUT/judge_outputs.jsonl" ]]; then
+      echo "   judge_outputs.jsonl $(wc -l < "$OUT/judge_outputs.jsonl") 条，$(du -h "$OUT/judge_outputs.jsonl" | cut -f1)"
+    else
+      echo "   judge_outputs.jsonl 没有 —— 是否忘了跑 python exp_patch_raw.py ?"
+    fi
+  done
+  echo ""
+  echo "参考：GPT-5.5（官方 judge）在同一题上给 claude 的 overall 是 0.4690"
+  echo "两个 judge 都有分数且无 error，就可以跑全量了。"
+  exit 0
+fi
 
 # ── 清洗：每个 target 只做一次，与 judge 无关 ───────────────────
 if [[ "$MODE" == "clean" ]]; then
