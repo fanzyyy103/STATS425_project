@@ -1,0 +1,14 @@
+# 实验结果（体积大，且含各轮原始输出）
+results/
+*.jsonl
+
+# 但保留选题清单
+!tasks_15.json
+
+# 密钥
+.env
+*.key
+
+__pycache__/
+*.pyc
+.DS_Store
