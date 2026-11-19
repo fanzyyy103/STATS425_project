@@ -103,6 +103,8 @@ for J in "${JUDGES[@]}"; do
         echo "跳过 $T（没有清洗版，先跑 ./exp_run.sh clean）"; continue
       fi
       OUT="results/race/${T}__${JNAME}__${R}"
+      # judge 原文写到同一目录（需先跑 exp_patch_raw.py，否则此变量被忽略）
+      export JUDGE_DUMP_DIR="$DRB/$OUT"
       echo ""
       echo "=== judge=$JNAME  轮次=$R  target=$T ==="
       run python deepresearch_bench_race.py "$T" \
