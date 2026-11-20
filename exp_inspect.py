@@ -59,6 +59,18 @@ def iter_items(dim_obj):
     return []
 
 
+def text_of(item, *keys):
+    """取评语或标准文本。prompt 规定的字段是 analysis；judge 偶尔会把值包成列表
+    （gpt-5-nano 的 1.4% 调用如此），这里统一拍平成字符串。"""
+    for k in keys:
+        v = item.get(k)
+        if isinstance(v, list):
+            v = " ".join(map(str, v))
+        if v:
+            return str(v)
+    return ""
+
+
 def wrap(text, width, indent):
     words, line, lines = str(text).split(), "", []
     for w in words:
@@ -102,7 +114,7 @@ def main():
                 for d in DIMS:
                     for item in iter_items(obj.get(d)):
                         if isinstance(item, dict):
-                            a = item.get("comparative_analysis") or ""
+                            a = text_of(item, "analysis", "comparative_analysis")
                             agg.setdefault(j, []).append(len(str(a)))
         for j, lens in sorted(agg.items()):
             lens.sort()
@@ -140,14 +152,14 @@ def main():
             crit = None
             for j in judges:
                 if isinstance(per_judge[j][i], dict):
-                    crit = per_judge[j][i].get("criterion") or crit
+                    crit = text_of(per_judge[j][i], "criterion") or crit
             print(f"\n  标准 {i+1}：{wrap(crit, 70, 4)}")
             for j in judges:
                 item = per_judge[j][i]
                 if not isinstance(item, dict):
                     continue
                 s1 = item.get("article_1_score"); s2 = item.get("article_2_score")
-                a = item.get("comparative_analysis") or ""
+                a = text_of(item, "analysis", "comparative_analysis")
                 print(f"    [{j}]  目标 {s1} / 参考 {s2}   ({len(str(a))} 字符)")
                 print(f"      {wrap(a, 68, 6)}")
         if n > args.max_criteria:
