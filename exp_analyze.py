@@ -51,10 +51,17 @@ def load_all(dim):
                 r = json.loads(line)
                 if "error" in r or dim not in r:
                     continue
+                if all(r.get(d) in (0, 0.0, None) for d in DIMS):
+                    # 格式故障而非判断：benchmark 把不合规输出静默记成 0（见 exp_resume.py）
+                    INVALID.append((judge, target, rnd, r["id"]))
+                    continue
                 scores[r["id"]] = r[dim]
         if scores:
             data[judge][target][rnd] = scores
     return data
+
+
+INVALID = []
 
 
 def boot_ci(x, n=10000, seed=0):
@@ -78,6 +85,11 @@ def main():
 
     judges = sorted(data)
     targets = sorted({t for j in data for t in data[j]})
+    if INVALID:
+        print(f"⚠ 剔除 {len(INVALID)} 条全零记录（judge 输出格式不合规，benchmark 静默记 0，不是真实分数）：")
+        for j, t, r, i in sorted(INVALID):
+            print(f"    {j} × {t} × {r} × 任务 {i}")
+        print("  重跑补齐：./exp_run.sh score <judge>（续跑脚本会只重跑这些题）\n")
     print(f"维度：{args.dim} | judge {len(judges)} 个 | target {len(targets)} 个\n")
 
     # ── 第一层：噪声底 ────────────────────────────────────────
@@ -149,17 +161,61 @@ def main():
     # ── 第三层：排名稳定性 ───────────────────────────────────
     print("\n" + "=" * 70)
     print("第三层  排名是否随 judge 变化")
+    def paired(j, a, b):
+        """judge j 下，target a − b 的逐题差（两轮都用，按题配对）。"""
+        out = []
+        for rnd in ("r1", "r2"):
+            sa, sb = data[j].get(a, {}).get(rnd, {}), data[j].get(b, {}).get(rnd, {})
+            out += [sa[i] - sb[i] for i in set(sa) & set(sb)]
+        return np.array(out)
+
     rankings = {}
     for j in judges:
-        order = sorted((t for t in targets if t in mean[j]),
-                       key=lambda t: -mean[j][t])
+        order = sorted((t for t in targets if t in mean[j]), key=lambda t: -mean[j][t])
         rankings[j] = order
-        line = "  >  ".join(f"{t.split('-')[0]}" for t in order)
-        print(f"\n  {j:<18} {line}")
-    if len(rankings) > 1:
-        base = list(rankings.values())[0]
-        flipped = any(r != base for r in rankings.values())
-        print(f"\n  → {'排名发生了翻转！这是核心结果。' if flipped else '所有 judge 给出相同排名。'}")
+        print(f"\n  {j:<18} " + "  >  ".join(f"{t.split('-')[0]}({mean[j][t]:.3f})" for t in order))
+
+    if len(judges) > 1:
+        print("\n  名次对调的 target 对，逐 judge 检验差距是否超出噪声（bootstrap 95% CI）：")
+        found = False
+        for ai in range(len(targets)):
+            for bi in range(ai + 1, len(targets)):
+                a, b = targets[ai], targets[bi]
+                signs = {j: np.sign(mean[j][a] - mean[j][b]) for j in judges
+                         if a in mean[j] and b in mean[j]}
+                if len(set(signs.values())) < 2:
+                    continue
+                found = True
+                print(f"\n    {a.split('-')[0]} vs {b.split('-')[0]}")
+                sig = {}
+                for j in judges:
+                    d = paired(j, a, b)
+                    lo, hi = boot_ci(d)
+                    sig[j] = (lo > 0 or hi < 0)
+                    print(f"      {j:<16} 差 {d.mean():+.4f}  [{lo:+.4f}, {hi:+.4f}]  "
+                          f"{a.split('-')[0]} 胜出 {(d > 0).mean():.0%} 的题  "
+                          f"{'显著' if sig[j] else '不显著'}")
+                if all(sig.values()):
+                    print("      → 真实翻转：两个 judge 都显著且方向相反")
+                elif any(sig.values()):
+                    print("      → 不是翻转，而是区分能力差异：一个 judge 能分开，另一个分不开")
+                else:
+                    print("      → 两个 judge 都分不开，名次对调只是噪声")
+        if not found:
+            print("    无：所有 judge 给出相同排名。")
+
+        # 压缩效应：以第一个 judge 为参照
+        ref, other = judges[0], judges[1]
+        common = [t for t in targets if t in mean[ref] and t in mean[other]]
+        x = np.array([mean[ref][t] for t in common])
+        y = np.array([mean[other][t] for t in common])
+        sx, sy = x.max() - x.min(), y.max() - y.min()
+        print(f"\n  分数跨度：{ref} {sx:.4f}，{other} {sy:.4f}"
+              f"（{other} 相对{'压缩' if sy < sx else '拉伸'} {abs(1 - sy / sx):.0%}）")
+        if len(common) >= 3:
+            r = np.corrcoef(x, y - x)[0, 1]
+            print(f"  {ref} 分数 与 ({other} − {ref}) 的相关系数 r = {r:.3f}"
+                  f"{'  ← 低分 target 被抬得更多' if r < -0.5 else ''}")
 
     # ── 同家族偏好 ──────────────────────────────────────────
     print("\n" + "=" * 70)
