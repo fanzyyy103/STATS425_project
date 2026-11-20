@@ -55,7 +55,7 @@ TARGETS = ["gemini-2.5-pro-deepresearch", "openai-deepresearch",
            "perplexity-Research", "grok-deeper-search",
            "claude-3-7-sonnet-latest"]
 ROUNDS = 2
-MAX_OUTPUT_TOKENS = int(os.environ.get("MAX_OUTPUT_TOKENS", "16000"))
+MAX_OUTPUT_TOKENS = int(os.environ.get("MAX_OUTPUT_TOKENS", "64000"))   # 与 benchmark 默认一致
 REASONING_EFFORT = "medium"      # 与 api.py 的 score 阶段一致，三个 judge 必须相同
 EXPECTED_DIMS = ["comprehensiveness", "insight", "instruction_following", "readability"]
 
