@@ -20,6 +20,22 @@ import argparse, os, shutil, sys
 REPO = os.environ.get("DRB_PATH") or os.path.dirname(os.path.abspath(__file__))
 TARGET = os.path.join(REPO, "deepresearch_bench_race.py")
 BACKUP = TARGET + ".orig"
+
+# 第二处：清洗器把"整块都是参考文献"返回的空字符串当成失败，导致整篇被丢弃
+CLEAN_TARGET = os.path.join(REPO, "utils", "clean_article.py")
+CLEAN_BACKUP = CLEAN_TARGET + ".orig"
+CLEAN_MARK = "# --- exp patch: accept empty chunk ---"
+CLEAN_ANCHOR = """        if not result:
+            logger.error(f"Chunk {idx+1}/{total} failed to clean")
+            return None"""
+CLEAN_PATCHED = """        # --- exp patch: accept empty chunk ---
+        # "" 表示这一块全是参考文献（prompt 的约定；_clean_text 和
+        # chunk_clean_article 都接受它）。上游这里写的是 `if not result`，
+        # 把 "" 当成失败，整篇报告因此被丢弃。整篇的有效性仍由
+        # _clean_chunked 末尾的 _is_valid_result 检查。
+        if result is None:
+            logger.error(f"Chunk {idx+1}/{total} failed to clean")
+            return None"""
 MARK = "# --- exp patch v2 ---"
 MARK_V1 = "# --- exp patch: dump judge raw output ---"   # 旧版，检测到就升级
 
@@ -58,6 +74,20 @@ PATCHED = """    # --- exp patch v2 ---
     return final_result"""
 
 
+def patch_cleaner():
+    src = open(CLEAN_TARGET, encoding="utf-8").read()
+    if CLEAN_MARK in src:
+        print("清洗器补丁已是最新。")
+        return
+    if CLEAN_ANCHOR not in src:
+        sys.exit("清洗器里找不到插入位置——上游代码可能变了，请检查 _clean_one_chunk。")
+    if not os.path.exists(CLEAN_BACKUP):
+        shutil.copy2(CLEAN_TARGET, CLEAN_BACKUP)
+    open(CLEAN_TARGET, "w", encoding="utf-8").write(src.replace(CLEAN_ANCHOR, CLEAN_PATCHED, 1))
+    print(f"清洗器补丁已应用到 {CLEAN_TARGET}")
+    print("  （修复：只含参考文献的分块返回空字符串时，不再把整篇报告判为失败）")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--revert", action="store_true", help="还原为未打补丁的版本")
@@ -72,11 +102,16 @@ def main():
         shutil.copy2(BACKUP, TARGET)
         os.remove(BACKUP)
         print(f"已还原 {TARGET}")
+        if os.path.exists(CLEAN_BACKUP):
+            shutil.copy2(CLEAN_BACKUP, CLEAN_TARGET)
+            os.remove(CLEAN_BACKUP)
+            print(f"已还原 {CLEAN_TARGET}")
         return
 
     src = open(TARGET, encoding="utf-8").read()
     if MARK in src:
-        print("已经打过最新补丁了，无需重复执行。")
+        print("主补丁已是最新。")
+        patch_cleaner()
         return
     if MARK_V1 in src:
         if not os.path.exists(BACKUP):
@@ -93,6 +128,7 @@ def main():
 
     open(TARGET, "w", encoding="utf-8").write(src.replace(ANCHOR, PATCHED, 1))
     print(f"补丁已应用到 {TARGET}")
+    patch_cleaner()
     print("\n之后每次运行设置 JUDGE_DUMP_DIR 即可保存原文；exp_run.sh 已自动设置。")
     print("还原：python exp_patch_raw.py --revert")
 
