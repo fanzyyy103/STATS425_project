@@ -48,7 +48,10 @@ ONLY_JUDGE="${2:-}"
 DRY="${DRY:-0}"
 
 QUERY="data/prompt_data/query_sub15.jsonl"
-export MAX_OUTPUT_TOKENS="${MAX_OUTPUT_TOKENS:-16000}"
+# 与 benchmark 默认值一致。这个变量是全局的：清洗阶段也受它限制，而清洗要把整篇
+# 报告重写一遍，长报告输出远超 16k。设小了会截断、退回切块重洗、多付一次钱；
+# 打分阶段推理 + 26 条评语也可能顶到上限导致 JSON 截断。它只是上限，按实际用量计费。
+export MAX_OUTPUT_TOKENS="${MAX_OUTPUT_TOKENS:-64000}"
 
 TARGETS=(
   gemini-2.5-pro-deepresearch
