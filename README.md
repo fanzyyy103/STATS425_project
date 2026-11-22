@@ -200,3 +200,24 @@ for the same criterion side by side, and `--stats` reports comment length per ju
 | `exp_patch_raw.py` | Patch the benchmark to persist raw judge responses (idempotent, reversible with `--revert`) |
 | `exp_resume.py` | Per-task resume: merge partial results, dedupe, write the query file of remaining tasks |
 | `exp_inspect.py` | Put two judges' written comparisons side by side; `--stats` summarises comment length |
+| `exp_export.py` | Flatten `results/race/` into the same per-call format as `results_claude_raw_reports/` (read-only on `results/`) |
+| `results_openai_raw_reports/openai_compact/` | Final gpt-5-mini / gpt-5-nano scores, see below |
+
+## Result files: `results_openai_raw_reports/openai_compact/`
+
+One row per judge call, in the same layout as `results_claude_raw_reports/claude_compact/`, so
+the three judge families can be joined on `target` + `prompt_id`. 300 rows: 2 judges
+(`gpt-5-mini`, `gpt-5-nano`) x 2 rounds x 5 targets x 15 tasks.
+
+- `openai_judge_runs.jsonl`: full version; `raw_evaluations` holds the judge's per-criterion
+  analysis and article scores.
+- `openai_judge_runs.csv`: the same rows without `raw_evaluations`.
+- Columns: `judge, round, target, prompt_id, race_score` (overall), the four dimension scores
+  (`comprehensiveness, insight, instruction_following, readability`), `status`.
+- Not recorded by our runs, so absent (unlike the Claude files): `attempts`, `served_model`, `usage`.
+- 10 rows have `raw_evaluations: null`: round 1, task 4, every target, both judges. These were the
+  smoke-test calls, run before `exp_patch_raw.py` was applied, so only their scores were kept.
+- Scores are the final, validated ones: two all-zero results caused by a malformed judge
+  response (silently scored 0 by the benchmark) were dropped and re-run; see `exp_resume.py`.
+- Regenerate with `python3 exp_export.py` after a run. Target names follow the Claude/Gemini
+  files (for example `openai-deep-research`, `grok-deepersearch`).
