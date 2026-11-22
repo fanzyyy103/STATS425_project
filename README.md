@@ -221,3 +221,16 @@ the three judge families can be joined on `target` + `prompt_id`. 300 rows: 2 ju
   response (silently scored 0 by the benchmark) were dropped and re-run; see `exp_resume.py`.
 - Regenerate with `python3 exp_export.py` after a run. Target names follow the Claude/Gemini
   files (for example `openai-deep-research`, `grok-deepersearch`).
+
+
+## Gemini and Claude compact runs
+
+The compact result files contain 150 accepted evaluations per judge, covering
+15 tasks, five target report sets, and two rounds. These runs use the four
+published raw deep-research report sets and the benchmark's precleaned Claude
+report set. The compact prompts request brief justifications.
+
+The three Gemini evaluations added after the initial 147-score run requested
+`gemini-3.5-flash-lite` through CC Switch. The proxy did not report the served
+model version for those rows. For analyses that require confirmed model
+provenance, exclude those three rows and report coverage as 147/150.
