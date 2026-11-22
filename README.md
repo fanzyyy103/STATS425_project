@@ -232,5 +232,4 @@ report set. The compact prompts request brief justifications.
 
 The three Gemini evaluations added after the initial 147-score run used
 CC Switch configured to route to Gemini 3.5 Flash-Lite (`gemini-3.5-flash-lite`),
-as confirmed by the experiment operator. The proxy omitted the served model
-version field for those responses.
+as confirmed by the experiment operator.
