@@ -1,0 +1,2 @@
+judge,round,target,prompt_id,race_score,attempts,served_model,status
+claude-haiku-5-5,1,gemini-2.5-pro-deep-research,1,0.5013872092196059,1,claude-haiku-5-5,success
